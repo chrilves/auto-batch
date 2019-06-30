@@ -1,0 +1,1 @@
+# Auto-Batch: Automatic-Batching of API calls in [Scala](https://scala-lang.org)
