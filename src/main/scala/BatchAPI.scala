@@ -4,7 +4,6 @@ package autobatch
 import cats.Monad
 import scala.collection.immutable.{SortedSet, TreeMap}
 import scala.collection.mutable
-import scala.language.higherKinds
 
 /** The configuration of the Batch Monad: the real batch API
   *
@@ -73,7 +72,8 @@ trait BatchAPI[F[_], Req, Resp] { self =>
     */
   @inline final def totalDispatch(
       requests: List[Req],
-      response: List[Resp]): Map[Req, Option[Resp]] = {
+      response: List[Resp]
+  ): Map[Req, Option[Resp]] = {
     val res = dispatch(requests, response)
     TreeMap.empty(requestOrdering) ++ requests.map(r => r -> res.get(r))
   }
@@ -96,8 +96,9 @@ trait BatchAPI[F[_], Req, Resp] { self =>
   @inline final def flatMap[A, B](fa: Batch[A])(f: A => Batch[B]): Batch[B] =
     BatchT.flatMap(fa)(f)
 
-  @inline final def tailRecM[A, B](a: A)(
-      f: A => Batch[Either[A, B]]): Batch[B] =
+  @inline final def tailRecM[A, B](
+      a: A
+  )(f: A => Batch[Either[A, B]]): Batch[B] =
     BatchT.tailRecM(a)(f)
 
   def contraMap[Req2](f: Req2 => Req): BatchAPI[F, Req2, Resp] =
@@ -111,8 +112,10 @@ trait BatchAPI[F[_], Req, Resp] { self =>
       final def sendBatch(requests: List[Req2]): F[List[Resp]] =
         self.sendBatch(toReq(requests))
 
-      final def dispatch(requests: List[Req2],
-                         response: List[Resp]): Map[Req2, Resp] = {
+      final def dispatch(
+          requests: List[Req2],
+          response: List[Resp]
+      ): Map[Req2, Resp] = {
         val tr: mutable.Builder[(Req2, Resp), TreeMap[Req2, Resp]] =
           TreeMap.newBuilder[Req2, Resp](requestOrdering)
 

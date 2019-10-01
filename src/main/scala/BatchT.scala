@@ -6,7 +6,6 @@ import cats.syntax.flatMap._
 
 import scala.annotation.tailrec
 import scala.collection.immutable.SortedSet
-import scala.language.higherKinds
 
 /** Presently, if there is an error, in one item of the batch, all fail.
   * Possible evolution: make BatchT an error monad so that it can recover
@@ -17,7 +16,8 @@ sealed abstract class BatchT[F[_], Req, Resp, A](val hasRequests: Boolean) {
     BatchT.run(batchAPI, this)
 
   @inline final def requests(
-      implicit requestOrdering: Ordering[Req]): SortedSet[Req] =
+      implicit requestOrdering: Ordering[Req]
+  ): SortedSet[Req] =
     BatchT.requests(this)(requestOrdering)
 }
 
@@ -28,15 +28,17 @@ object BatchT {
 
   /** Send a non-batched request */
   @inline def sendRequest[F[_], Req, Resp](
-      request: Req): BatchT[F, Req, Resp, Resp] =
+      request: Req
+  ): BatchT[F, Req, Resp, Resp] =
     BatchT.SendRequest(request)
 
   /** Applicative/Monadic pure */
   @inline def pure[F[_], Req, Resp, A](x: A): BatchT[F, Req, Resp, A] = Pure(x)
 
   /** Applicative ap */
-  @inline def ap[F[_], Req, Resp, A, B](ff: BatchT[F, Req, Resp, A => B])(
-      fa: BatchT[F, Req, Resp, A]): BatchT[F, Req, Resp, B] =
+  @inline def ap[F[_], Req, Resp, A, B](
+      ff: BatchT[F, Req, Resp, A => B]
+  )(fa: BatchT[F, Req, Resp, A]): BatchT[F, Req, Resp, B] =
     (ff, fa) match {
       case (Pure(f), Pure(a)) =>
         Pure(f(a))
@@ -45,30 +47,33 @@ object BatchT {
     }
 
   /** Functorial map */
-  @inline def map[F[_], Req, Resp, A, B](fa: BatchT[F, Req, Resp, A])(
-      f: A => B): BatchT[F, Req, Resp, B] =
+  @inline def map[F[_], Req, Resp, A, B](
+      fa: BatchT[F, Req, Resp, A]
+  )(f: A => B): BatchT[F, Req, Resp, B] =
     ap[F, Req, Resp, A, B](pure(f))(fa)
 
   /** Monadic flatten */
   @inline def flatten[F[_], Req, Resp, A](
-      value: BatchT[F, Req, Resp, BatchT[F, Req, Resp, A]])
-    : BatchT[F, Req, Resp, A] =
+      value: BatchT[F, Req, Resp, BatchT[F, Req, Resp, A]]
+  ): BatchT[F, Req, Resp, A] =
     value match {
       case Pure(m) => m
       case _       => Flatten(value)
     }
 
   /** Monadic flatMap */
-  @inline def flatMap[F[_], Req, Resp, A, B](fa: BatchT[F, Req, Resp, A])(
-      f: A => BatchT[F, Req, Resp, B]): BatchT[F, Req, Resp, B] =
+  @inline def flatMap[F[_], Req, Resp, A, B](
+      fa: BatchT[F, Req, Resp, A]
+  )(f: A => BatchT[F, Req, Resp, B]): BatchT[F, Req, Resp, B] =
     fa match {
       case Pure(a) => f(a)
       case _       => flatten(map(fa)(f))
     }
 
   /** Cats tailrecM */
-  @inline def tailRecM[F[_], Req, Resp, A, B](a: A)(
-      f: A => BatchT[F, Req, Resp, Either[A, B]]): BatchT[F, Req, Resp, B] = {
+  @inline def tailRecM[F[_], Req, Resp, A, B](
+      a: A
+  )(f: A => BatchT[F, Req, Resp, Either[A, B]]): BatchT[F, Req, Resp, B] = {
     val m = f(a)
     flatMap(m) {
       case Left(a2) => tailRecM(a2)(f)
@@ -87,12 +92,12 @@ object BatchT {
 
   private final case class Ap[F[_], Req, Resp, A, B](
       fun: BatchT[F, Req, Resp, A => B],
-      arg: BatchT[F, Req, Resp, A])
-      extends BatchT[F, Req, Resp, B](fun.hasRequests || arg.hasRequests)
+      arg: BatchT[F, Req, Resp, A]
+  ) extends BatchT[F, Req, Resp, B](fun.hasRequests || arg.hasRequests)
 
   private final case class Flatten[F[_], Req, Resp, A](
-      value: BatchT[F, Req, Resp, BatchT[F, Req, Resp, A]])
-      extends BatchT[F, Req, Resp, A](value.hasRequests)
+      value: BatchT[F, Req, Resp, BatchT[F, Req, Resp, A]]
+  ) extends BatchT[F, Req, Resp, A](value.hasRequests)
 
   private final case class SendRequest[F[_], Req, Resp](request: Req)
       extends BatchT[F, Req, Resp, Resp](true)
@@ -101,8 +106,9 @@ object BatchT {
   // Running BatchT
 
   /** Collect all the request inside a {{{BatchT[F, Req, Resp, A]}}} */
-  def requests[F[_], Req, Resp, A](fa: BatchT[F, Req, Resp, A])(
-      implicit requestOrdering: Ordering[Req]): SortedSet[Req] = {
+  def requests[F[_], Req, Resp, A](
+      fa: BatchT[F, Req, Resp, A]
+  )(implicit requestOrdering: Ordering[Req]): SortedSet[Req] = {
     type G[X] = BatchT[F, Req, Resp, X]
     val reqs = collection.immutable.TreeSet.newBuilder[Req](requestOrdering)
 
@@ -126,20 +132,23 @@ object BatchT {
   }
 
   /** Run the BatchT monad */
-  def run[F[_], Req, Resp, A](batchAPI: BatchAPI[F, Req, Resp],
-                              arg: BatchT[F, Req, Resp, A]): F[A] = {
+  def run[F[_], Req, Resp, A](
+      batchAPI: BatchAPI[F, Req, Resp],
+      arg: BatchT[F, Req, Resp, A]
+  ): F[A] = {
     type G[X] = BatchT[F, Req, Resp, X]
 
-    /** If you modify this, check carefully that replace normalize term and terminates
-      *
-      * HYPOTHESIS:
-      *   1) `fa.requests` is non empty
-      *   2) each `fa.request` is a key in `answers` (see totalDispatch)
-      *   2) if `fa` terminates, so does `replace(answers)(fa)`
-      */
+    /* If you modify this, check carefully that replace normalize term and terminates
+     *
+     * HYPOTHESIS:
+     *   1) `fa.requests` is non empty
+     *   2) each `fa.request` is a key in `answers` (see totalDispatch)
+     *   2) if `fa` terminates, so does `replace(answers)(fa)`
+     */
     def replace[B](
         answers: Map[Req, Option[Resp]],
-        argReplace: BatchT[F, Req, Resp, B]): BatchT[F, Req, Resp, B] = {
+        argReplace: BatchT[F, Req, Resp, B]
+    ): BatchT[F, Req, Resp, B] = {
       sealed abstract class Cont[C, D]
       final case class Id[D]() extends Cont[D, D]
       final case class Ap1[X, C, D](apArg: G[X], k: Cont[C, D])
@@ -147,8 +156,8 @@ object BatchT {
       final case class Ap2[X, C, D](normFun: G[X => C], k: Cont[C, D])
           extends Cont[X, D]
       final case class Flat1[X, C, D](k: Cont[C, D])(
-          implicit val ev: G[X] =:= G[G[C]])
-          extends Cont[X, D]
+          implicit val ev: G[X] =:= G[G[C]]
+      ) extends Cont[X, D]
 
       final case class AuxArgs[C, D](fc: G[C], k: Cont[C, D])
 
@@ -207,8 +216,8 @@ object BatchT {
       final case class Ap2[X, C, D](normFun: F[X => C], k: Cont[C, D])
           extends Cont[X, D]
       final case class Flat1[X, C, D](k: Cont[C, D])(
-          implicit val ev: F[X] =:= F[G[C]])
-          extends Cont[X, D]
+          implicit val ev: F[X] =:= F[G[C]]
+      ) extends Cont[X, D]
 
       final case class AuxArgs[C, D](fc: G[C], k: Cont[C, D])
 
@@ -262,25 +271,29 @@ object BatchT {
   // Implicits
 
   implicit def batchTMonadInstance[F[_], Req, Resp]
-    : Monad[BatchT[F, Req, Resp, ?]] =
+      : Monad[BatchT[F, Req, Resp, ?]] =
     new Monad[BatchT[F, Req, Resp, ?]] {
       @inline final def pure[A](a: A): BatchT[F, Req, Resp, A] =
         BatchT.pure(a)
 
-      @inline override final def ap[A, B](ff: BatchT[F, Req, Resp, A => B])(
-          fa: BatchT[F, Req, Resp, A]): BatchT[F, Req, Resp, B] =
+      @inline override final def ap[A, B](
+          ff: BatchT[F, Req, Resp, A => B]
+      )(fa: BatchT[F, Req, Resp, A]): BatchT[F, Req, Resp, B] =
         BatchT.ap(ff)(fa)
 
-      @inline override final def map[A, B](fa: BatchT[F, Req, Resp, A])(
-          f: A => B): BatchT[F, Req, Resp, B] =
+      @inline override final def map[A, B](
+          fa: BatchT[F, Req, Resp, A]
+      )(f: A => B): BatchT[F, Req, Resp, B] =
         BatchT.map(fa)(f)
 
-      @inline final def flatMap[A, B](fa: BatchT[F, Req, Resp, A])(
-          f: A => BatchT[F, Req, Resp, B]): BatchT[F, Req, Resp, B] =
+      @inline final def flatMap[A, B](
+          fa: BatchT[F, Req, Resp, A]
+      )(f: A => BatchT[F, Req, Resp, B]): BatchT[F, Req, Resp, B] =
         BatchT.flatMap(fa)(f)
 
-      @inline final def tailRecM[A, B](a: A)(
-          f: A => BatchT[F, Req, Resp, Either[A, B]]): BatchT[F, Req, Resp, B] =
+      @inline final def tailRecM[A, B](
+          a: A
+      )(f: A => BatchT[F, Req, Resp, Either[A, B]]): BatchT[F, Req, Resp, B] =
         BatchT.tailRecM(a)(f)
     }
 }
